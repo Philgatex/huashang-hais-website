@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.app {
+  @apply min-h-screen bg-blue-50 text-gray-800 font-sans;
+}
+
+.background {
+  @apply min-h-screen p-5;
+}
+
+.header {
+  @apply bg-blue-900 text-white-custom text-center p-5 font-sans;
+}
+
+.header nav {
+  @apply my-4;
+}
+
+.header a {
+  @apply text-white-custom mx-2 hover:underline;
+}
+
+.cta-buttons button {
+  @apply bg-blue-900 text-white-custom px-4 py-2 mx-2 rounded hover:bg-blue-100;
+}
+
+.section {
+  @apply max-w-2xl mx-auto my-10 p-5 bg-white-custom rounded-lg shadow-md font-sans;
+}
+
+.section h2 {
+  @apply text-blue-900 text-2xl mb-4;
+}
+
+.services-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6;
+}
+
+.services-grid div {
+  @apply p-4 bg-blue-50 rounded;
+}
+
+.services-grid h3 {
+  @apply text-lg font-bold text-blue-900 mb-2;
+}
+
+.client-portal {
+  @apply mt-4;
+}
+
+.client-portal input {
+  @apply block w-full p-2 mb-2 border rounded;
+}
+
+.client-portal button {
+  @apply bg-blue-900 text-white-custom px-4 py-2 rounded hover:bg-blue-100;
+}
+
+.testimonials p {
+  @apply mt-2;
+}
+
+.cta {
+  @apply max-w-xl mx-auto my-10 p-5 bg-white-custom rounded-lg shadow-md text-center font-sans;
+}
+
+.cta ul {
+  @apply list-disc pl-5 text-left mb-4;
+}
+
+.cta form {
+  @apply mt-5;
+}
+
+.cta input, .cta select, .cta textarea {
+  @apply block w-full p-2 mb-2 border rounded;
+}
+
+.cta button {
+  @apply bg-blue-900 text-white-custom px-5 py-2 rounded hover:bg-blue-100;
+}
+
+.footer {
+  @apply bg-blue-900 text-white-custom text-center p-5 mt-10 font-sans;
+}
+
+.footer nav {
+  @apply mb-2;
+}
+
+.footer a {
+  @apply text-white-custom mx-2 hover:underline;
+}
+
+.social-links {
+  @apply mb-2;
+}

@@ -1,563 +1,917 @@
-import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import Chart from 'chart.js/auto';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
+// --- Framer Motion Variants ---
+const sectionVariants = {
+  hidden: { opacity: 0, y: 80 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.8,
+      ease: "easeOut",
+      when: "beforeChildren",
+      staggerChildren: 0.1,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 50 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.6,
+      ease: "easeOut",
+    },
+  },
+};
+
+const navItemVariants = {
+  hidden: { opacity: 0, x: -20 },
+  visible: (i) => ({
+    opacity: 1,
+    x: 0,
+    transition: {
+      delay: i * 0.08,
+      duration: 0.5,
+      ease: "easeOut",
+    },
+  }),
+};
+
+const buttonHover = {
+  scale: 1.05,
+  boxShadow: '0 15px 30px rgba(0,0,0,0.2)',
+  transition: { type: "spring", stiffness: 300, damping: 10 }
+};
+
+const buttonTap = {
+  scale: 0.95
+};
+
+// Mobile Nav Menu Variants
+const mobileMenuVariants = {
+  hidden: { opacity: 0, x: "100%" },
+  visible: {
+    opacity: 1,
+    x: "0%",
+    transition: {
+      duration: 0.5,
+      ease: "easeOut",
+      when: "beforeChildren",
+      staggerChildren: 0.08,
+    },
+  },
+  exit: {
+    opacity: 0,
+    x: "100%",
+    transition: {
+      duration: 0.4,
+      ease: "easeIn",
+    },
+  },
+};
+
+const mobileMenuItemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 },
+};
+
+
+// --- App Component ---
 function App() {
-  const [formData, setFormData] = useState({ name: '', company: '', emailPhone: '', message: '', inquiry: 'General' });
-  const [payrollData, setPayrollData] = useState({ gross: 0, net: 0, deductions: {} });
-  const [portalUser, setPortalUser] = useState({ username: '', password: '' });
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const chartRef = useRef(null);
-  const [chartInstance, setChartInstance] = useState(null);
-
-  // Handle form input changes
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-  };
-
-  // Handle contact form submission with API
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await fetch('http://localhost:3000/api/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      const data = await response.json();
-      alert('Form submitted: ' + JSON.stringify(data));
-    } catch (error) {
-      alert('Error submitting form');
+  const [grossSalary, setGrossSalary] = useState('');
+  const [netSalary, setNetSalary] = useState(0);
+  const [deductions, setDeductions] = useState({
+    PAYE: 0,
+    NSSF: 0,
+    SHIF: 0,
+    HousingLevy: 0,
+  });
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    // Initialize theme from localStorage or default to 'light'
+    if (typeof window !== 'undefined' && localStorage.getItem('theme')) {
+      return localStorage.getItem('theme');
     }
-  };
+    // Check system preference
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  });
 
-  // Handle portal login (mock)
-  const handlePortalLogin = (e) => {
-    e.preventDefault();
-    if (portalUser.username && portalUser.password) {
-      setIsLoggedIn(true);
-      alert('Logged in as ' + portalUser.username);
+  useEffect(() => {
+    // Apply theme class to HTML element
+    const html = document.documentElement;
+    if (theme === 'dark') {
+      html.classList.add('dark');
     } else {
-      alert('Please enter username and password');
+      html.classList.remove('dark');
     }
+    // Store theme preference
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prevTheme) => (prevTheme === 'light' ? 'dark' : 'light'));
   };
 
-  // Calculate payroll with API, reflecting 2025 NSSF Tier I/II
-  const calculatePayroll = async (gross) => {
-    try {
-      const response = await fetch('http://localhost:3000/api/payroll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gross }),
-      });
-      const data = await response.json();
-      setPayrollData(data);
-    } catch (error) {
-      console.error('Error calculating payroll:', error);
+  const calculatePayroll = () => {
+    let gross = parseFloat(grossSalary) || 0;
+    let ded = { PAYE: 0, NSSF: 0, SHIF: 0, HousingLevy: 0 };
+
+    // NSSF (Simplified for demo, based on Kenyan NSSF Act 2013 tiers - actual rates may vary)
+    const NSSF_TIER1_CAP = 7000;
+    const NSSF_TIER2_CAP = 36000;
+    const NSSF_RATE = 0.06;
+
+    let nssfPensionablePay = Math.min(gross, NSSF_TIER2_CAP);
+    let nssfTier1Contribution = Math.min(nssfPensionablePay, NSSF_TIER1_CAP) * NSSF_RATE;
+    let nssfTier2Contribution = Math.max(0, nssfPensionablePay - NSSF_TIER1_CAP) * NSSF_RATE;
+    ded.NSSF = nssfTier1Contribution + nssfTier2Contribution;
+
+    // SHIF (Social Health Insurance Fund - effective July 2024, replaces NHIF)
+    const SHIF_RATE = 0.0275;
+    ded.SHIF = gross * SHIF_RATE;
+
+    // Housing Levy (Affordable Housing Levy)
+    const HOUSING_LEVY_RATE = 0.015;
+    ded.HousingLevy = gross * HOUSING_LEVY_RATE;
+
+    // Taxable Income Calculation
+    let taxableIncome = gross - ded.NSSF - ded.SHIF - ded.HousingLevy;
+
+    // PAYE (Pay As You Earn) Calculation - Simplified KRA Income Tax Bands (Illustrative for demo)
+    // Current year is 2025, so we consider relevant tax bands for Kenya as of 2024/2025 financial year,
+    // assuming no major changes. This is still illustrative.
+    const PERSONAL_RELIEF = 2400; // Monthly personal relief
+
+    let PAYE_before_relief = 0;
+    if (taxableIncome <= 24000) { // Up to 24,000 KES
+        PAYE_before_relief = taxableIncome * 0.10;
+    } else if (taxableIncome <= 32333) { // 24,001 to 32,333 KES
+        PAYE_before_relief = (24000 * 0.10) + ((taxableIncome - 24000) * 0.25);
+    } else if (taxableIncome <= 500000) { // 32,334 to 500,000 KES
+        PAYE_before_relief = (24000 * 0.10) + (8333 * 0.25) + ((taxableIncome - 32333) * 0.30);
+    } else if (taxableIncome <= 800000) { // 500,001 to 800,000 KES
+        PAYE_before_relief = (24000 * 0.10) + (8333 * 0.25) + (467667 * 0.30) + ((taxableIncome - 500000) * 0.325);
+    } else { // Above 800,000 KES
+        PAYE_before_relief = (24000 * 0.10) + (8333 * 0.25) + (467667 * 0.30) + (300000 * 0.325) + ((taxableIncome - 800000) * 0.35);
     }
+
+    ded.PAYE = Math.max(0, PAYE_before_relief - PERSONAL_RELIEF);
+
+    let finalNet = gross - ded.NSSF - ded.SHIF - ded.HousingLevy - ded.PAYE;
+
+    setNetSalary(Math.round(finalNet));
+    setDeductions(ded);
   };
 
-  // Chart setup for analytics
-  useEffect(() => {
-    if (chartRef.current && !chartInstance) {
-      const ctx = chartRef.current.getContext('2d');
-      const newChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: ['Satisfaction', 'Conversion', 'Diversity'],
-          datasets: [{
-            label: 'Metrics (%)',
-            data: [85, 65, 72],
-            backgroundColor: 'rgba(30, 58, 138, 0.6)',
-          }],
-        },
-        options: {
-          scales: { y: { beginAtZero: true, max: 100 } },
-        },
+  const scrollToSection = (id) => {
+    const element = document.getElementById(id);
+    if (element) {
+      // Offset for sticky header
+      const headerOffset = document.querySelector('header').offsetHeight;
+      const elementPosition = element.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({
+        top: elementPosition - headerOffset - 20, // 20px extra padding
+        behavior: 'smooth'
       });
-      setChartInstance(newChartInstance);
     }
-    return () => {
-      if (chartInstance) chartInstance.destroy();
-    };
-  }, [chartInstance]);
-
-  // Placeholder for AI initialization
-  useEffect(() => {
-    console.log('Initializing AI features...');
-  }, []);
+    setIsMobileMenuOpen(false); // Close menu on navigation
+  };
 
   return (
-    <div className="font-sans text-gray-800 min-h-screen">
+    <div className="min-h-screen bg-neutral-50 text-neutral-800 font-body antialiased flex flex-col overflow-x-hidden
+                    dark:bg-neutral-900 dark:text-neutral-50"> {/* Dark mode base */}
       {/* Header */}
       <motion.header
-        className="bg-blue-900 text-white py-6"
-        initial={{ y: -100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.5 }}
+        className="bg-neutral-900 text-white-custom py-4 shadow-strong z-50 sticky top-0
+                   dark:bg-primary-900 dark:shadow-lg" // Dark mode header
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.7, ease: "easeOut" }}
       >
-        <div className="container mx-auto px-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Huashang HAIS Ltd</h1>
-          <nav>
-            <a href="#home" className="mx-2 hover:underline">Home</a>
-            <a href="#about" className="mx-2 hover:underline">About</a>
-            <a href="#services" className="mx-2 hover:underline">Services</a>
-            <a href="#analytics" className="mx-2 hover:underline">Analytics</a>
-            <a href="#payroll" className="mx-2 hover:underline">Payroll</a>
-            <a href="#hrms" className="mx-2 hover:underline">HRMS</a>
-            <a href="#outsourcing" className="mx-2 hover:underline">Outsourcing</a>
-            <a href="#compliance" className="mx-2 hover:underline">Compliance</a>
-            <a href="#contact" className="mx-2 hover:underline">Contact</a>
-            <a href="#blog" className="mx-2 hover:underline">Blog</a>
+        <div className="container flex items-center justify-between">
+          <h1 className="text-3xl font-heading font-bold">
+            <a href="#home" onClick={() => scrollToSection('home')} className="hover:text-accent-300 transition-colors">Huashang HAIS Ltd</a>
+          </h1>
+
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex flex-wrap justify-end gap-x-6 text-lg items-center"> {/* Added items-center */}
+            {['Home', 'About', 'Services', 'Payroll', 'Resources', 'Contact'].map((item, index) => (
+              <motion.a
+                key={item}
+                href={`#${item.toLowerCase().replace(/\s/g, '')}`}
+                onClick={() => scrollToSection(item.toLowerCase().replace(/\s/g, ''))}
+                className="text-white-custom hover:text-accent-300 transition-colors duration-200 py-1 px-2 font-medium"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                variants={navItemVariants}
+                initial="hidden"
+                animate="visible"
+                custom={index}
+              >
+                {item}
+              </motion.a>
+            ))}
+            {/* New Buttons for Desktop */}
+            <motion.button
+              className="bg-primary-600 hover:bg-primary-700 text-white-custom px-4 py-2 rounded-full font-semibold shadow-md transition-all duration-300 ml-6"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              onClick={() => window.open('https://your-ess-portal.com', '_blank')} // Placeholder URL
+            >
+              ESS Portal
+            </motion.button>
+            <motion.button
+              className="bg-primary-600 hover:bg-primary-700 text-white-custom px-4 py-2 rounded-full font-semibold shadow-md transition-all duration-300 ml-2"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              onClick={() => window.open('https://your-login-page.com', '_blank')} // Placeholder URL
+            >
+              Login
+            </motion.button>
           </nav>
+
+          <div className="flex items-center gap-4">
+            {/* Theme Toggle Button */}
+            <motion.button
+              onClick={toggleTheme}
+              className="text-white-custom text-xl px-3 py-2 rounded-full focus:outline-none focus:ring-2 focus:ring-accent-300
+                         dark:text-accent-300"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              aria-label="Toggle theme"
+            >
+              <i className={`fas ${theme === 'light' ? 'fa-moon' : 'fa-sun'}`}></i>
+            </motion.button>
+
+            <motion.button
+              className="hidden md:block bg-accent-500 hover:bg-accent-600 text-white-custom px-6 py-2 rounded-full font-semibold shadow-md transition-all duration-300 ml-6"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              onClick={() => scrollToSection('contact')}
+            >
+              Request Demo
+            </motion.button>
+
+            {/* Mobile Menu Toggle */}
+            <button
+              className="md:hidden text-white-custom text-3xl focus:outline-none"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label="Toggle mobile menu"
+            >
+              <i className={`fas ${isMobileMenuOpen ? 'fa-times' : 'fa-bars'}`}></i>
+            </button>
+          </div>
         </div>
       </motion.header>
 
-      {/* Hero Section */}
-      <motion.section
-        id="home"
-        className="bg-blue-100 py-16"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1 }}
-        style={{ backgroundImage: 'ur[](https://via.placeholder.com/1920x600/blue-tech-office)' }}
-      >
-        <div className="container mx-auto px-4 text-center">
-          <h1 className="text-4xl font-bold mb-4 text-blue-900">Huashang HAIS Ltd</h1>
-          <p className="text-2xl mb-6">Empowering HR with Data-Driven Intelligence</p>
-          <div className="space-x-4">
-            <a href="#demo" className="bg-blue-900 text-white py-2 px-4 rounded hover:bg-blue-700">Request a Demo</a>
-            <a href="#get-started" className="bg-blue-900 text-white py-2 px-4 rounded hover:bg-blue-700">Get Started</a>
-            <a href="#contact" className="bg-blue-900 text-white py-2 px-4 rounded hover:bg-blue-700">Contact Us</a>
+      {/* Mobile Navigation Overlay */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.nav
+            className="fixed inset-0 bg-neutral-900 bg-opacity-95 z-40 flex flex-col items-center justify-center space-y-8 md:hidden
+                       dark:bg-primary-900 dark:bg-opacity-95" // Dark mode mobile menu
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={mobileMenuVariants}
+          >
+            {['Home', 'About', 'Services', 'Payroll', 'Resources', 'Contact'].map((item) => (
+              <motion.a
+                key={item}
+                href={`#${item.toLowerCase().replace(/\s/g, '')}`}
+                onClick={() => scrollToSection(item.toLowerCase().replace(/\s/g, ''))}
+                className="text-white-custom text-4xl font-heading font-bold hover:text-accent-300 transition-colors"
+                variants={mobileMenuItemVariants}
+                whileTap={{ scale: 0.95 }}
+              >
+                {item}
+              </motion.a>
+            ))}
+            {/* New Buttons for Mobile */}
+            <motion.button
+              className="bg-primary-600 hover:bg-primary-700 text-white-custom px-8 py-4 rounded-full font-semibold text-xl shadow-lg transition-all duration-300"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              variants={mobileMenuItemVariants}
+              onClick={() => { window.open('https://your-ess-portal.com', '_blank'); setIsMobileMenuOpen(false); }} // Placeholder URL
+            >
+              ESS Portal
+            </motion.button>
+            <motion.button
+              className="bg-primary-600 hover:bg-primary-700 text-white-custom px-8 py-4 rounded-full font-semibold text-xl shadow-lg transition-all duration-300"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              variants={mobileMenuItemVariants}
+              onClick={() => { window.open('https://your-login-page.com', '_blank'); setIsMobileMenuOpen(false); }} // Placeholder URL
+            >
+              Login
+            </motion.button>
+            <motion.button
+              className="bg-accent-500 hover:bg-accent-600 text-white-custom px-8 py-4 rounded-full font-semibold text-xl shadow-lg transition-all duration-300 mt-10"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              variants={mobileMenuItemVariants}
+              onClick={() => { scrollToSection('contact'); setIsMobileMenuOpen(false); }} // Close menu after click
+            >
+              Request Demo
+            </motion.button>
+          </motion.nav>
+        )}
+      </AnimatePresence>
+
+
+      {/* --- Main Content Area --- */}
+      <main className="flex-grow">
+        {/* Hero Section - With Background Image */}
+        <motion.section
+          className="relative py-24 md:py-32 lg:py-40 bg-hr-hero-bg bg-cover bg-center text-white-custom text-center overflow-hidden"
+          id="home"
+          variants={sectionVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.4 }}
+        >
+          {/* Overlay for readability, mimicking the example image's dark blue/purple feel */}
+          <div className="absolute inset-0 bg-primary-900 opacity-80"></div>
+          {/* Subtle pattern on top of the image */}
+          <div className="absolute inset-0 bg-pattern-squares opacity-10"></div>
+
+          <div className="container relative z-10 flex flex-col items-center">
+            <motion.h2
+              className="text-5xl md:text-6xl lg:text-7xl font-heading font-bold mb-6 leading-tight max-w-5xl text-white"
+              variants={itemVariants}
+            >
+              Streamline Your HR with Intelligent Solutions
+            </motion.h2>
+            <motion.p
+              className="text-xl md:text-2xl max-w-3xl mx-auto opacity-90 leading-relaxed mb-10 text-primary-100"
+              variants={itemVariants}
+            >
+              Kenya's leading provider of data-driven HR analytics, payroll automation, and compliance solutions.
+            </motion.p>
+            <motion.div
+              className="flex flex-col sm:flex-row justify-center gap-5"
+              variants={{ visible: { transition: { staggerChildren: 0.15 } } }}
+            >
+              <motion.button
+                className="bg-accent-500 hover:bg-accent-600 text-white-custom px-8 py-4 rounded-full font-semibold text-lg shadow-xl transform hover:-translate-y-1 transition-all duration-300 min-w-[200px]"
+                whileHover={buttonHover}
+                whileTap={buttonTap}
+                onClick={() => scrollToSection('services')}
+              >
+                Explore Services
+              </motion.button>
+              <motion.button
+                className="bg-white-custom text-primary-800 px-8 py-4 rounded-full font-semibold text-lg shadow-xl transform hover:-translate-y-1 transition-all duration-300 min-w-[200px]"
+                whileHover={buttonHover}
+                whileTap={buttonTap}
+                onClick={() => scrollToSection('contact')}
+              >
+                Get a Quote
+              </motion.button>
+            </motion.div>
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
 
-      {/* Overview */}
-      <motion.section
-        className="bg-white-custom py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold mb-4 text-blue-900">Overview</h2>
-          <p className="text-lg mb-6">Huashang HAIS Ltd is Kenya's premier HR and IT analytics solutions provider. We bridge the gap between workforce strategy, compliance, and digital transformation. Our platform empowers organizations to make data-informed HR decisions while staying fully compliant with Kenyan labor laws.</p>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-left">
-            <div className="p-4"><strong>Workforce & HR Analytics</strong></div>
-            <div className="p-4"><strong>Payroll & ESS Software</strong></div>
-            <div className="p-4"><strong>Outsourcing & Staffing</strong></div>
-            <div className="p-4"><strong>Labor Law Compliance</strong></div>
-            <div className="p-4"><strong>Custom HR Software</strong></div>
+        {/* About Section */}
+        <motion.section
+          className="py-16 md:py-24 bg-white text-neutral-800
+                     dark:bg-neutral-800 dark:text-neutral-50" // Dark mode for about section
+          id="about"
+          variants={sectionVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          <div className="container grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <motion.div variants={itemVariants}>
+              <h3 className="text-base text-primary-600 font-semibold mb-3">WHO WE ARE</h3>
+              <h2 className="text-4xl md:text-5xl font-heading font-bold text-primary-800 mb-8 leading-tight
+                             dark:text-white-custom">
+                Driving HR Excellence Through Innovation
+              </h2>
+              <p className="text-lg text-neutral-700 leading-relaxed mb-6
+                            dark:text-neutral-300">
+                Huashang HAIS Ltd is at the forefront of human resource management and IT analytics in Kenya. We are dedicated to transforming traditional HR functions into strategic, data-driven powerhouses for businesses of all sizes. Our solutions are designed to address the unique challenges of the Kenyan HR landscape, ensuring local compliance and maximizing workforce potential.
+              </p>
+              <p className="text-lg text-neutral-700 leading-relaxed mb-8
+                            dark:text-neutral-300">
+                Our bespoke solutions empower organizations to optimize their workforce, ensure compliance, and unlock the full potential of their human capital through cutting-edge technology and unparalleled expertise. We partner with you to build resilient, efficient, and engaged workforces.
+              </p>
+              <motion.button
+                className="bg-primary-600 hover:bg-primary-700 text-white-custom px-7 py-3 rounded-full font-semibold shadow-md transition-all duration-300"
+                whileHover={buttonHover}
+                whileTap={buttonTap}
+                onClick={() => window.open('https://your-website.com/about-us', '_blank')} // Placeholder URL
+              >
+                Learn More About Us
+              </motion.button>
+            </motion.div>
+            <motion.div variants={itemVariants} className="relative aspect-video rounded-xl shadow-xl overflow-hidden group">
+              <img
+                src="https://source.unsplash.com/random/800x600/?business-strategy,teamwork,data-analytics"
+                alt="About Us"
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-primary-900 opacity-20 group-hover:opacity-10 transition-opacity"></div>
+            </motion.div>
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
 
-      {/* Testimonials */}
-      <motion.section
-        className="bg-blue-100 py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.3 }}
-      >
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold mb-4 text-blue-900">Testimonials</h2>
-          <blockquote className="text-lg italic">"Since using Huashang HAIS, our HR processes are not only compliant but smarter. Their system gives us insight we've never had before." — HR Manager, Logistics Firm</blockquote>
-        </div>
-      </motion.section>
+        {/* Services Section */}
+        <motion.section
+          className="py-16 md:py-24 bg-neutral-50
+                     dark:bg-neutral-900" // Dark mode for services section
+          id="services"
+          variants={sectionVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          <div className="container">
+            <h3 className="text-base text-primary-600 font-semibold mb-3 text-center">WHAT WE OFFER</h3>
+            <h2 className="text-4xl md:text-5xl font-heading font-bold text-primary-800 mb-14 text-center
+                             dark:text-white-custom">
+              Our Comprehensive HR & IT Solutions
+            </h2>
+            <motion.div
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+              variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
+            >
+              {/* Service Card 1 */}
+              <motion.a
+                href="https://your-website.com/services/hr-analytics" // Updated Link
+                className="block bg-white rounded-2xl shadow-strong p-8 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer flex flex-col items-start
+                           dark:bg-neutral-800 dark:border-neutral-700" // Dark mode service card
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <div className="text-primary-600 text-5xl mb-4 p-3 bg-primary-50 rounded-lg
+                                dark:bg-primary-700 dark:text-accent-300">📊</div>
+                <h3 className="text-2xl font-heading font-semibold text-primary-700 mb-3
+                               dark:text-white-custom">HR Analytics & Insights</h3>
+                <p className="text-neutral-600 leading-relaxed flex-grow
+                              dark:text-neutral-300">
+                  Unlock the power of your workforce data with our advanced analytics dashboards. Gain insights into attrition, performance, engagement, and D&I metrics.
+                </p>
+                <span className="mt-4 text-primary-600 font-semibold hover:text-accent-500 transition-colors flex items-center">
+                  Learn More <span className="ml-2">→</span>
+                </span>
+              </motion.a>
 
-      {/* About Us */}
-      <motion.section
-        id="about"
-        className="bg-white-custom py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.4 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">About Us</h2>
-          <p className="text-lg mb-4">Huashang HAIS Ltd was founded with a mission to digitize and humanize the HR space across Kenya and East Africa. We provide smart HR systems, compliant staffing solutions, and analytics-powered insights tailored for SMEs, corporates, and public institutions.</p>
-          <h3 className="text-xl font-semibold mt-6">Vision</h3>
-          <p>To be the leading provider of digital HR solutions that empower African businesses.</p>
-          <h3 className="text-xl font-semibold mt-6">Mission</h3>
-          <p>To deliver accurate, data-driven HR systems and support services grounded in compliance, innovation, and efficiency.</p>
-          <h3 className="text-xl font-semibold mt-6">Core Values</h3>
-          <ul className="list-disc pl-6">
-            <li>Integrity</li>
-            <li>Compliance</li>
-            <li>Innovation</li>
-            <li>Client-Centricity</li>
-            <li>Excellence</li>
-          </ul>
-        </div>
-      </motion.section>
+              {/* Service Card 2 */}
+              <motion.a
+                href="https://your-website.com/services/payroll-ess" // Updated Link
+                className="block bg-white rounded-2xl shadow-strong p-8 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer flex flex-col items-start
+                           dark:bg-neutral-800 dark:border-neutral-700"
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <div className="text-primary-600 text-5xl mb-4 p-3 bg-primary-50 rounded-lg
+                                dark:bg-primary-700 dark:text-accent-300">💰</div>
+                <h3 className="text-2xl font-heading font-semibold text-primary-700 mb-3
+                               dark:text-white-custom">Payroll & ESS Software</h3>
+                <p className="text-neutral-600 leading-relaxed flex-grow
+                              dark:text-neutral-300">
+                  Automate complex payroll calculations, manage statutory deductions, generate payslips, and empower employees with our intuitive self-service portal.
+                </p>
+                <span className="mt-4 text-primary-600 font-semibold hover:text-accent-500 transition-colors flex items-center">
+                  Learn More <span className="ml-2">→</span>
+                </span>
+              </motion.a>
 
-      {/* Services */}
-      <motion.section
-        id="services"
-        className="bg-blue-100 py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.5 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Our Services</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-xl font-semibold mb-2">HR Analytics</h3>
-              <ul className="list-disc pl-6">
-                <li>Workforce composition</li>
-                <li>Attrition trends</li>
-                <li>Performance mapping</li>
-                <li>Employee engagement</li>
-                <li>Diversity and inclusion metrics</li>
-              </ul>
-            </div>
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-xl font-semibold mb-2">Payroll & ESS Software</h3>
-              <ul className="list-disc pl-6">
-                <li>NHIF, NSSF, Housing Levy deductions</li>
-                <li>Net salary calculation & statutory reports</li>
-                <li>Payslip generation & employee access</li>
-                <li>Leave management</li>
-                <li>Loan and advance tracking</li>
-              </ul>
-            </div>
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-xl font-semibold mb-2">Outsourcing & Staffing</h3>
-              <ul className="list-disc pl-6">
-                <li>Contract and seasonal staffing</li>
-                <li>Secondment models</li>
-                <li>Staff vetting, onboarding, and HR support</li>
-                <li>Industry-specific deployment</li>
-              </ul>
-            </div>
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-xl font-semibold mb-2">Compliance Services</h3>
-              <ul className="list-disc pl-6">
-                <li>Labor audits</li>
-                <li>Policy drafting</li>
-                <li>Workplace safety compliance</li>
-                <li>Staff induction</li>
-              </ul>
-            </div>
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-xl font-semibold mb-2">Software Development</h3>
-              <ul className="list-disc pl-6">
-                <li>Cloud-based HRMS & Payroll systems</li>
-                <li>ESS Android app</li>
-                <li>Admin dashboards with analytics</li>
-                <li>API integrations</li>
-              </ul>
-            </div>
+              {/* Service Card 3 */}
+              <motion.a
+                href="https://your-website.com/services/outsourcing-staffing" // Updated Link
+                className="block bg-white rounded-2xl shadow-strong p-8 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer flex flex-col items-start
+                           dark:bg-neutral-800 dark:border-neutral-700"
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <div className="text-primary-600 text-5xl mb-4 p-3 bg-primary-50 rounded-lg
+                                dark:bg-primary-700 dark:text-accent-300">🤝</div>
+                <h3 className="text-2xl font-heading font-semibold text-primary-700 mb-3
+                               dark:text-white-custom">Outsourcing & Staffing</h3>
+                <p className="text-neutral-600 leading-relaxed flex-grow
+                              dark:text-neutral-300">
+                  Streamline your workforce with expert contract staffing, secondment models, and comprehensive HR support. We handle vetting, onboarding, and ongoing management.
+                </p>
+                <span className="mt-4 text-primary-600 font-semibold hover:text-accent-500 transition-colors flex items-center">
+                  Learn More <span className="ml-2">→</span>
+                </span>
+              </motion.a>
+
+              {/* Service Card 4 */}
+              <motion.a
+                href="https://your-website.com/services/compliance-advisory" // Updated Link
+                className="block bg-white rounded-2xl shadow-strong p-8 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer flex flex-col items-start
+                           dark:bg-neutral-800 dark:border-neutral-700"
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <div className="text-primary-600 text-5xl mb-4 p-3 bg-primary-50 rounded-lg
+                                dark:bg-primary-700 dark:text-accent-300">⚖️</div>
+                <h3 className="text-2xl font-heading font-semibold text-primary-700 mb-3
+                               dark:text-white-custom">Compliance & Advisory</h3>
+                <p className="text-neutral-600 leading-relaxed flex-grow
+                              dark:text-neutral-300">
+                  Navigate complex labor laws, develop robust policies, and ensure full adherence to OSHA and other statutory requirements with our expert guidance.
+                </p>
+                <span className="mt-4 text-primary-600 font-semibold hover:text-accent-500 transition-colors flex items-center">
+                  Learn More <span className="ml-2">→</span>
+                </span>
+              </motion.a>
+
+              {/* Service Card 5 */}
+              <motion.a
+                href="https://your-website.com/services/custom-software-dev" // Updated Link
+                className="block bg-white rounded-2xl shadow-strong p-8 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer flex flex-col items-start
+                           dark:bg-neutral-800 dark:border-neutral-700"
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <div className="text-primary-600 text-5xl mb-4 p-3 bg-primary-50 rounded-lg
+                                dark:bg-primary-700 dark:text-accent-300">💻</div>
+                <h3 className="text-2xl font-heading font-semibold text-primary-700 mb-3
+                               dark:text-white-custom">Custom Software Dev</h3>
+                <p className="text-neutral-600 leading-relaxed flex-grow
+                              dark:text-neutral-300">
+                  From cloud-based HRMS to mobile ESS apps, we develop scalable, secure software tailored to your unique business processes and integration needs.
+                </p>
+                <span className="mt-4 text-primary-600 font-semibold hover:text-accent-500 transition-colors flex items-center">
+                  Learn More <span className="ml-2">→</span>
+                </span>
+              </motion.a>
+            </motion.div>
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
 
-      {/* HR Analytics */}
-      <motion.section
-        id="analytics"
-        className="bg-white-custom py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.6 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">HR Analytics Dashboard</h2>
-          <div className="bg-white p-6 rounded shadow">
-            <p className="mb-4">Mock data (AI-enhanced soon):</p>
-            <ul className="list-disc pl-6">
-              <li>Employee Satisfaction: 85%</li>
-              <li>Hiring Funnel Conversion: 65%</li>
-              <li>Diversity Index: 72/100</li>
-            </ul>
-            <canvas ref={chartRef} className="mt-4"></canvas>
-          </div>
-        </div>
-      </motion.section>
+        {/* Payroll Calculator Section */}
+        <motion.section
+          className="py-16 md:py-24 bg-primary-800 text-white-custom"
+          id="payroll"
+          variants={sectionVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          <div className="container grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <motion.div variants={itemVariants} className="text-center lg:text-left">
+              <h2 className="text-4xl md:text-5xl font-heading font-bold mb-6 leading-tight">
+                Quick Net Pay Estimate
+              </h2>
+              <p className="text-xl opacity-90 leading-relaxed mb-8">
+                Use our calculator to get an instant estimate of your take-home salary after Kenyan statutory deductions. This tool provides a simplified calculation for illustrative purposes based on current Kenyan tax laws (as of 2024/2025 financial year).
+              </p>
+              <img
+                src="https://source.unsplash.com/random/600x400/?calculator,money,finance,keyboard"
+                alt="Payroll Illustration"
+                className="rounded-xl shadow-xl w-full max-w-lg mx-auto lg:mx-0"
+              />
+            </motion.div>
+            <motion.div
+              className="bg-white rounded-3xl shadow-xl p-8 md:p-10 space-y-6 border border-neutral-200 text-neutral-800
+                         dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-50" // Dark mode for payroll card
+              variants={itemVariants}
+            >
+              <h3 className="text-3xl font-heading font-bold text-primary-800 text-center mb-6
+                             dark:text-white-custom">Payroll Calculator</h3>
+              <input
+                type="number"
+                value={grossSalary}
+                onChange={(e) => setGrossSalary(e.target.value)}
+                placeholder="Enter Gross Salary (KES)"
+                className="w-full p-4 border border-neutral-300 rounded-lg text-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none shadow-inner bg-neutral-50
+                           dark:bg-neutral-700 dark:border-neutral-600 dark:text-white-custom dark:placeholder-neutral-400" // Dark mode input
+              />
+              <motion.button
+                onClick={calculatePayroll}
+                className="bg-accent-500 hover:bg-accent-600 text-white-custom px-8 py-4 rounded-full font-semibold text-lg shadow-lg transition-all duration-300 w-full"
+                whileHover={buttonHover}
+                whileTap={buttonTap}
+              >
+                Calculate Net Salary
+              </motion.button>
 
-      {/* Payroll */}
-      <motion.section
-        id="payroll"
-        className="bg-blue-100 py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.7 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Payroll Calculator</h2>
-          <div className="bg-white p-6 rounded shadow max-w-md mx-auto">
-            <input
-              type="number"
-              placeholder="Enter gross salary (KES)"
-              onChange={(e) => calculatePayroll(parseFloat(e.target.value) || 0)}
-              className="w-full p-2 mb-4 border rounded"
-            />
-            <p>Gross Salary: KES {payrollData.gross.toLocaleString()}</p>
-            <p>Net Salary: KES {payrollData.net.toLocaleString()}</p>
-            <p>Deductions:</p>
-            <ul className="list-disc pl-6">
-              <li>PAYE: KES {payrollData.deductions.PAYE?.toLocaleString() || 0}</li>
-              <li>NSSF: KES {payrollData.deductions.NSSF?.toLocaleString() || 0}</li>
-              <li>SHIF: KES {payrollData.deductions.SHIF?.toLocaleString() || 0}</li>
-              <li>Housing Levy: KES {payrollData.deductions.HousingLevy?.toLocaleString() || 0}</li>
-            </ul>
-          </div>
-        </div>
-      </motion.section>
-
-      {/* HRMS */}
-      <motion.section
-        id="hrms"
-        className="bg-white-custom py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.8 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">HR Management System</h2>
-          <div className="bg-white p-6 rounded shadow">
-            <h3 className="text-xl font-semibold mb-2">Client Portal</h3>
-            {!isLoggedIn ? (
-              <form onSubmit={handlePortalLogin} className="space-y-4">
-                <input
-                  type="text"
-                  name="username"
-                  value={portalUser.username}
-                  onChange={(e) => setPortalUser({ ...portalUser, username: e.target.value })}
-                  placeholder="Username"
-                  className="w-full p-2 border rounded"
-                  required
-                />
-                <input
-                  type="password"
-                  name="password"
-                  value={portalUser.password}
-                  onChange={(e) => setPortalUser({ ...portalUser, password: e.target.value })}
-                  placeholder="Password"
-                  className="w-full p-2 border rounded"
-                  required
-                />
-                <button type="submit" className="bg-blue-900 text-white py-2 px-4 rounded hover:bg-blue-700">
-                  Login
-                </button>
-              </form>
-            ) : (
-              <div>
-                <p>Welcome to ESS & Admin Dashboard!</p>
-                <ul className="list-disc pl-6">
-                  <li>View & Download Payslips</li>
-                  <li>Leave & Attendance Management</li>
-                  <li>Performance Appraisals</li>
-                  <li>Reports & Analytics (PDF/Excel)</li>
+              <motion.div
+                className="text-left bg-neutral-50 p-6 rounded-xl border border-neutral-200 shadow-sm transition-all duration-500
+                           dark:bg-neutral-700 dark:border-neutral-600" // Dark mode payroll results
+                key={netSalary}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              >
+                <p className="text-xl font-semibold text-primary-800 mb-2
+                              dark:text-white-custom">Gross Salary: <span className="font-body text-neutral-700 dark:text-neutral-300">KES {grossSalary ? parseFloat(grossSalary).toLocaleString('en-KE') : '0'}</span></p>
+                <p className="text-3xl font-bold text-accent-700 mb-4">Net Salary: <span className="font-body">KES {netSalary.toLocaleString('en-KE')}</span></p>
+                <p className="text-lg font-semibold text-neutral-700 mb-2
+                              dark:text-neutral-300">Deductions Summary:</p>
+                <ul className="space-y-1 text-neutral-600 dark:text-neutral-400">
+                  <li><span className="font-semibold">PAYE:</span> KES {deductions.PAYE.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</li>
+                  <li><span className="font-semibold">NSSF:</span> KES {deductions.NSSF.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</li>
+                  <li><span className="font-semibold">SHIF:</span> KES {deductions.SHIF.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</li>
+                  <li><span className="font-semibold">Housing Levy:</span> KES {deductions.HousingLevy.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</li>
                 </ul>
-                <button onClick={() => setIsLoggedIn(false)} className="bg-blue-900 text-white py-2 px-4 rounded hover:bg-blue-700 mt-4">
-                  Logout
-                </button>
-              </div>
-            )}
+              </motion.div>
+            </motion.div>
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
 
-      {/* Outsourcing */}
-      <motion.section
-        id="outsourcing"
-        className="bg-blue-100 py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.9 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Outsourcing & Staffing</h2>
-          <div className="bg-white p-6 rounded shadow">
-            <p>End-to-end staff placement and management.</p>
+        {/* Resources / Blog Section */}
+        <motion.section
+          className="py-16 md:py-24 bg-white text-neutral-800
+                     dark:bg-neutral-800 dark:text-neutral-50" // Dark mode for resources section
+          id="resources"
+          variants={sectionVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          <div className="container text-center">
+            <h3 className="text-base text-primary-600 font-semibold mb-3">LATEST INSIGHTS</h3>
+            <h2 className="text-4xl md:text-5xl font-heading font-bold text-primary-800 mb-14
+                             dark:text-white-custom">
+              Explore Our HR Resources & Blog
+            </h2>
+            <motion.div
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+              variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
+            >
+              {/* Resource Card 1 */}
+              <motion.a
+                href="https://your-website.com/blog/hr-trends-2025" // Updated Link
+                className="block bg-neutral-50 rounded-2xl shadow-strong p-6 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer text-left
+                           dark:bg-neutral-700 dark:border-neutral-600" // Dark mode resource card
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <img
+                  src="https://source.unsplash.com/random/400x250/?hr-trends,future-of-work"
+                  alt="Blog Post 1"
+                  className="w-full h-48 object-cover rounded-xl mb-6"
+                />
+                <h3 className="text-xl font-heading font-semibold text-primary-700 mb-2
+                               dark:text-white-custom">
+                  Top HR Trends to Watch in 2025
+                </h3>
+                <p className="text-neutral-600 text-sm mb-4 dark:text-neutral-300">July 25, 2025 | HR Insights</p>
+                <p className="text-neutral-700 leading-relaxed text-sm dark:text-neutral-400">
+                  Discover the key trends shaping the future of human resources, from AI in recruitment to flexible work models. Stay ahead of the curve with our expert analysis.
+                </p>
+              </motion.a>
+
+              {/* Resource Card 2 */}
+              <motion.a
+                href="https://your-website.com/blog/payroll-automation-smes" // Updated Link
+                className="block bg-neutral-50 rounded-2xl shadow-strong p-6 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer text-left
+                           dark:bg-neutral-700 dark:border-neutral-600"
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <img
+                  src="https://source.unsplash.com/random/400x250/?payroll-software,efficiency"
+                  alt="Blog Post 2"
+                  className="w-full h-48 object-cover rounded-xl mb-6"
+                />
+                <h3 className="text-xl font-heading font-semibold text-primary-700 mb-2
+                               dark:text-white-custom">
+                  Automating Payroll: A Guide for Kenyan SMEs
+                </h3>
+                <p className="text-neutral-600 text-sm mb-4 dark:text-neutral-300">July 20, 2025 | Payroll</p>
+                <p className="text-neutral-700 leading-relaxed text-sm dark:text-neutral-400">
+                  Learn how automating your payroll can save time, reduce errors, and ensure compliance for your business. A must-read for small and medium enterprises.
+                </p>
+              </motion.a>
+
+              {/* Resource Card 3 */}
+              <motion.a
+                href="https://your-website.com/blog/employee-engagement-hybrid" // Updated Link
+                className="block bg-neutral-50 rounded-2xl shadow-strong p-6 border border-neutral-200 transform hover:scale-[1.02] transition-transform duration-300 cursor-pointer text-left
+                           dark:bg-neutral-700 dark:border-neutral-600"
+                variants={itemVariants}
+                whileHover={{ y: -5, boxShadow: '0 15px 30px rgba(0,0,0,0.1)' }}
+              >
+                <img
+                  src="https://source.unsplash.com/random/400x250/?employee-engagement,workplace-culture"
+                  alt="Blog Post 3"
+                  className="w-full h-48 object-cover rounded-xl mb-6"
+                />
+                <h3 className="text-xl font-heading font-semibold text-primary-700 mb-2
+                               dark:text-white-custom">
+                  Boosting Employee Engagement in a Hybrid World
+                </h3>
+                <p className="text-neutral-600 text-sm mb-4 dark:text-neutral-300">July 15, 2025 | Workplace Culture</p>
+                <p className="text-neutral-700 leading-relaxed text-sm dark:text-neutral-400">
+                  Strategies to keep your team motivated and connected, whether they're in the office or working remotely. Build a thriving hybrid workplace.
+                </p>
+              </motion.a>
+            </motion.div>
+            <motion.button
+              className="mt-12 bg-primary-600 hover:bg-primary-700 text-white-custom px-8 py-4 rounded-full font-semibold text-lg shadow-lg transition-all duration-300"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              onClick={() => window.open('https://your-website.com/blog', '_blank')} // Placeholder URL for all resources
+            >
+              View All Resources
+            </motion.button>
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
 
-      {/* Compliance */}
-      <motion.section
-        id="compliance"
-        className="bg-white-custom py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 1.0 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Compliance Services</h2>
-          <div className="bg-white p-6 rounded shadow">
-            <p>Ensure adherence to Kenyan labor and OSHA standards.</p>
+
+        {/* Call to Action - Testimonials & Trust */}
+        <motion.section
+          className="py-16 md:py-24 bg-primary-50 text-neutral-800
+                     dark:bg-neutral-900" // Dark mode for testimonials background
+          variants={sectionVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          <div className="container text-center max-w-5xl">
+            <h3 className="text-base text-primary-600 font-semibold mb-3">TRUSTED BY LEADERS</h3>
+            <h2 className="text-4xl md:text-5xl font-heading font-bold text-primary-800 mb-12
+                             dark:text-white-custom">
+              Our Clients Speak for Themselves
+            </h2>
+            <motion.div
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+              variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
+            >
+              <motion.div
+                variants={itemVariants}
+                className="bg-white rounded-2xl p-8 shadow-smooth border border-neutral-200 flex flex-col items-center text-center
+                           dark:bg-neutral-800 dark:border-neutral-700" // Dark mode testimonial card
+              >
+                <img src="https://api.dicebear.com/8.x/avataaars/svg?seed=Annie&radius=50" alt="Client 1" className="w-20 h-20 rounded-full mb-4 shadow-md object-cover" />
+                <p className="text-lg italic text-neutral-700 mb-4 dark:text-neutral-300">"Huashang HAIS revolutionized our payroll system. It's precise, efficient, and so easy to use. Highly recommended!"</p>
+                <p className="font-semibold text-primary-700 dark:text-accent-300">- Jane Doe, CEO of TechCorp</p>
+              </motion.div>
+              <motion.div
+                variants={itemVariants}
+                className="bg-white rounded-2xl p-8 shadow-smooth border border-neutral-200 flex flex-col items-center text-center
+                           dark:bg-neutral-800 dark:border-neutral-700"
+              >
+                <img src="https://api.dicebear.com/8.x/avataaars/svg?seed=John&radius=50" alt="Client 2" className="w-20 h-20 rounded-full mb-4 shadow-md object-cover" />
+                <p className="text-lg italic text-neutral-700 mb-4 dark:text-neutral-300">"Their HR analytics helped us identify key trends, leading to a significant boost in employee retention."</p>
+                <p className="font-semibold text-primary-700 dark:text-accent-300">- John Smith, HR Director at Global Logistics</p>
+              </motion.div>
+              <motion.div
+                variants={itemVariants}
+                className="bg-white rounded-2xl p-8 shadow-smooth border border-neutral-200 flex flex-col items-center text-center
+                           dark:bg-neutral-800 dark:border-neutral-700"
+              >
+                <img src="https://api.dicebear.com/8.x/avataaars/svg?seed=Sarah&radius=50" alt="Client 3" className="w-20 h-20 rounded-full mb-4 shadow-md object-cover" />
+                <p className="text-lg italic text-neutral-700 mb-4 dark:text-neutral-300">"Compliance used to be a headache. Now, with Huashang HAIS, we're always up-to-date and worry-free."</p>
+                <p className="font-semibold text-primary-700 dark:text-accent-300">- Sarah Chen, Operations Manager, HealthPlus</p>
+              </motion.div>
+            </motion.div>
+            <motion.button
+              className="mt-12 bg-accent-500 hover:bg-accent-600 text-white px-8 py-4 rounded-full font-semibold text-lg shadow-lg transition-all duration-300"
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              onClick={() => window.open('https://your-website.com/testimonials', '_blank')} // Placeholder URL
+            >
+              Read More Success Stories
+            </motion.button>
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
 
-      {/* Technology Stack */}
-      <motion.section
-        className="bg-blue-100 py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 1.1 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Technology Stack</h2>
-          <ul className="list-disc pl-6">
-            <li>Frontend: React, Next.js</li>
-            <li>Backend: Node.js, Firebase, PostgreSQL</li>
-            <li>Mobile App: Flutter / Kotlin</li>
-            <li>Cloud Hosting: AWS / Google Cloud</li>
-            <li>Design & Prototyping: Figma</li>
-            <li>Data Security: Encryption, SSL, Role-based Access</li>
-            <li>Compliance: ODPC Kenya, GDPR-Ready</li>
-          </ul>
-        </div>
-      </motion.section>
-
-      {/* Industries */}
-      <motion.section
-        className="bg-white-custom py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 1.2 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Industries We Serve</h2>
-          <ul className="list-disc pl-6">
-            <li>Corporates & Large Enterprises</li>
-            <li>SMEs</li>
-            <li>Healthcare Providers</li>
-            <li>Manufacturing & Production</li>
-            <li>Logistics & Supply Chain</li>
-            <li>Retail Chains</li>
-            <li>Public Sector Institutions</li>
-          </ul>
-        </div>
-      </motion.section>
-
-      {/* Case Studies */}
-      <motion.section
-        className="bg-blue-100 py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 1.3 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Case Studies</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-xl font-semibold mb-2">Logistics Sector</h3>
-              <p>"Our client reduced HR admin time by 43% and achieved 100% statutory compliance within 3 months."</p>
-            </div>
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-xl font-semibold mb-2">Healthcare Sector</h3>
-              <p>"Staff leave and shift planning was transformed into a seamless, digital workflow."</p>
-            </div>
+        {/* Contact Us Section */}
+        <motion.section
+          className="py-16 md:py-24 bg-primary-900 text-white-custom"
+          id="contact"
+          variants={sectionVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          <div className="container grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+            <motion.div variants={itemVariants}>
+              <h3 className="text-base text-accent-300 font-semibold mb-3">GET IN TOUCH</h3>
+              <h2 className="text-4xl md:text-5xl font-heading font-bold mb-6 leading-tight">
+                Let's Transform Your HR Together
+              </h2>
+              <p className="text-lg opacity-90 leading-relaxed mb-8">
+                Ready to elevate your HR strategy? Reach out to our experts today for a personalized consultation or demo. We're here to help you navigate the complexities of modern HR and IT.
+              </p>
+              <div className="space-y-6 text-lg">
+                <p className="flex items-center"><span className="text-accent-300 text-2xl mr-3"><i className="fas fa-map-marker-alt"></i></span> Huashang HAIS Ltd, Ngara Road, Nairobi, Kenya</p>
+                <p className="flex items-center"><span className="text-accent-300 text-2xl mr-3"><i className="fas fa-phone"></i></span> <a href="tel:+2547012250599" className="hover:underline text-white-custom">+254-701-225-0599</a></p>
+                <p className="flex items-center"><span className="text-accent-300 text-2xl mr-3"><i className="fas fa-envelope"></i></span> <a href="mailto:info@hais.co.ke" className="hover:underline text-white-custom">info@hais.co.ke</a></p>
+                <p className="flex items-center"><span className="text-accent-300 text-2xl mr-3"><i className="fas fa-globe"></i></span> <a href="https://www.hais.co.ke" target="_blank" rel="noopener noreferrer" className="hover:underline text-white-custom">www.hais.co.ke</a></p>
+              </div>
+              <div className="social-links flex gap-6 mt-10">
+                <a href="#" className="text-white-custom hover:text-accent-300 transition-colors duration-200 text-3xl" aria-label="LinkedIn"><i className="fab fa-linkedin"></i></a>
+                <a href="#" className="text-white-custom hover:text-accent-300 transition-colors duration-200 text-3xl" aria-label="Twitter"><i className="fab fa-twitter"></i></a>
+                <a href="#" className="text-white-custom hover:text-accent-300 transition-colors duration-200 text-3xl" aria-label="Facebook"><i className="fab fa-facebook"></i></a>
+              </div>
+            </motion.div>
+            <motion.form
+              className="bg-white rounded-3xl shadow-xl p-8 md:p-10 space-y-5 border border-neutral-200 text-neutral-800
+                         dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-50" // Dark mode for contact form
+              variants={itemVariants}
+            >
+              <h3 className="text-3xl font-heading font-bold text-primary-800 mb-6 text-center
+                             dark:text-white-custom">Send Us a Message</h3>
+              <input type="text" placeholder="Your Full Name" className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none shadow-inner bg-neutral-50
+                         dark:bg-neutral-700 dark:border-neutral-600 dark:text-white-custom dark:placeholder-neutral-400" />
+              <input type="text" placeholder="Company Name (Optional)" className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none shadow-inner bg-neutral-50
+                         dark:bg-neutral-700 dark:border-neutral-600 dark:text-white-custom dark:placeholder-neutral-400" />
+              <input type="email" placeholder="Email Address" className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none shadow-inner bg-neutral-50
+                         dark:bg-neutral-700 dark:border-neutral-600 dark:text-white-custom dark:placeholder-neutral-400" />
+              <select name="inquiryType" className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none bg-neutral-50 text-neutral-600 shadow-inner
+                         dark:bg-neutral-700 dark:border-neutral-600 dark:text-white-custom"> {/* Dark mode select */}
+                <option value="">Select Inquiry Type</option>
+                <option value="general">General Inquiry</option>
+                <option value="demo">Request a Demo</option>
+                <option value="support">Support Request</option>
+                <option value="partnership">Partnership Opportunity</option>
+              </select>
+              <textarea placeholder="Your Message" rows="5" className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none shadow-inner resize-y bg-neutral-50
+                            dark:bg-neutral-700 dark:border-neutral-600 dark:text-white-custom dark:placeholder-neutral-400"></textarea>
+              <motion.button
+                type="submit"
+                className="bg-accent-500 hover:bg-accent-600 text-white-custom px-8 py-4 rounded-full font-semibold text-lg shadow-lg transition-all duration-300 w-full"
+                whileHover={buttonHover}
+                whileTap={buttonTap}
+              >
+                Send Message
+              </motion.button>
+            </motion.form>
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
+      </main>
 
-      {/* Blog */}
-      <motion.section
-        id="blog"
-        className="bg-white-custom py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 1.4 }}
+      {/* Floating Chat Support Button */}
+      <motion.a
+        href="mailto:info@hais.co.ke?subject=Chat%20Support" // Simple mailto link or replace with live chat system link
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 bg-accent-500 text-white-custom p-4 rounded-full shadow-lg text-3xl z-50
+                   flex items-center justify-center transition-all duration-300 hover:bg-accent-600 hover:scale-110"
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        initial={{ opacity: 0, y: 50 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1.5, duration: 0.8, ease: "easeOut" }}
+        aria-label="Chat support"
       >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Blog & Resources</h2>
-          <ul className="list-disc pl-6">
-            <li><a href="#blog1" className="text-blue-900 hover:underline">Top 10 Payroll Mistakes Kenyan SMEs Make</a></li>
-            <li><a href="#blog2" className="text-blue-900 hover:underline">Understanding Housing Levy in 2025</a></li>
-            <li><a href="#blog3" className="text-blue-900 hover:underline">Choosing the Right ESS App</a></li>
-            <li><a href="#blog4" className="text-blue-900 hover:underline">How to Build a Disciplinary Policy in Kenya</a></li>
-          </ul>
-        </div>
-      </motion.section>
-
-      {/* Contact */}
-      <motion.section
-        id="contact"
-        className="bg-blue-100 py-16"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 1.5 }}
-      >
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold mb-8 text-center text-blue-900">Contact Us</h2>
-          <div className="max-w-md mx-auto bg-white p-6 rounded shadow">
-            <div className="mb-4 text-center">
-              <p>Huashang HAIS Ltd</p>
-              <p>Ngara Road, Nairobi, Kenya</p>
-              <p>📞 +254-701-225-0599</p>
-              <p>📧 <a href="mailto:info@hais.co.ke" className="text-blue-900 hover:underline">info@hais.co.ke</a></p>
-              <p>🌐 <a href="http://www.hais.co.ke" className="text-blue-900 hover:underline">www.hais.co.ke</a></p>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Name</label>
-                <input type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full p-2 border rounded" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Company Name</label>
-                <input type="text" name="company" value={formData.company} onChange={handleInputChange} className="w-full p-2 border rounded" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Email / Phone</label>
-                <input type="text" name="emailPhone" value={formData.emailPhone} onChange={handleInputChange} className="w-full p-2 border rounded" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Message / Inquiry Type</label>
-                <select name="inquiry" value={formData.inquiry} onChange={handleInputChange} className="w-full p-2 border rounded">
-                  <option value="General">General</option>
-                  <option value="Demo Request">Demo Request</option>
-                  <option value="Support">Support</option>
-                </select>
-              </div>
-              <button type="submit" className="bg-blue-900 text-white py-2 px-4 rounded hover:bg-blue-700 w-full">Send Message</button>
-            </form>
-            <div className="mt-4 text-center">
-              <iframe
-                title="Google Maps"
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3988.813614547!2d36.8236176147398!3d-1.2863899990000002!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x182f17f2f7f4e8f7%3A0x1!2sNgara%2C%20Nairobi!5e0!3m2!1sen!2ske!4v1690654321!5m2!1sen!2ske"
-                width="100%"
-                height="200"
-                style={{ border: 0 }}
-                allowFullScreen=""
-                loading="lazy"
-              ></iframe>
-            </div>
-          </div>
-        </div>
-      </motion.section>
+        <i className="fas fa-comments"></i>
+      </motion.a>
 
       {/* Footer */}
       <motion.footer
-        className="bg-blue-900 text-white py-6"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 1.6 }}
+        className="bg-neutral-900 text-white-custom py-10
+                   dark:bg-primary-900" // Dark mode footer
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.5, duration: 1 }}
       >
-        <div className="container mx-auto px-4 text-center">
-          <div className="mb-4">
-            <a href="#home" className="mx-2 hover:underline">Home</a>
-            <a href="#about" className="mx-2 hover:underline">About</a>
-            <a href="#services" className="mx-2 hover:underline">Services</a>
-            <a href="#blog" className="mx-2 hover:underline">Blog</a>
-            <a href="#contact" className="mx-2 hover:underline">Contact</a>
+        <div className="container text-center md:text-left grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="flex flex-col items-center md:items-start">
+            <h3 className="text-2xl font-heading font-bold text-accent-300 mb-4">Huashang HAIS</h3>
+            <p className="text-neutral-300 text-sm leading-relaxed max-w-xs">
+              Empowering HR with cutting-edge analytics, seamless payroll, and robust compliance solutions for the Kenyan market.
+            </p>
           </div>
-          <div className="mb-4">
-            <a href="https://www.linkedin.com" target="_blank" rel="noopener noreferrer" className="mx-2 hover:underline">LinkedIn</a>
-            <a href="https://www.twitter.com" target="_blank" rel="noopener noreferrer" className="mx-2 hover:underline">Twitter</a>
-            <a href="https://www.facebook.com" target="_blank" rel="noopener noreferrer" className="mx-2 hover:underline">Facebook</a>
+          <div className="flex flex-col items-center md:items-start">
+            <h3 className="text-xl font-heading font-semibold mb-4 text-white-custom">Quick Links</h3>
+            <ul className="space-y-2 text-neutral-300 text-base">
+              <li><a href="#home" onClick={() => scrollToSection('home')} className="hover:text-accent-300 transition-colors">Home</a></li>
+              <li><a href="#about" onClick={() => scrollToSection('about')} className="hover:text-accent-300 transition-colors">About Us</a></li>
+              <li><a href="#services" onClick={() => scrollToSection('services')} className="hover:text-accent-300 transition-colors">Services</a></li>
+              <li><a href="#payroll" onClick={() => scrollToSection('payroll')} className="hover:text-accent-300 transition-colors">Payroll Calculator</a></li>
+              <li><a href="#resources" onClick={() => scrollToSection('resources')} className="hover:text-accent-300 transition-colors">Resources</a></li>
+              <li><a href="#contact" onClick={() => scrollToSection('contact')} className="hover:text-accent-300 transition-colors">Contact</a></li>
+              {/* New Footer Links */}
+              <li><a href="https://your-ess-portal.com" target="_blank" rel="noopener noreferrer" className="hover:text-accent-300 transition-colors">ESS Portal</a></li>
+              <li><a href="https://your-login-page.com" target="_blank" rel="noopener noreferrer" className="hover:text-accent-300 transition-colors">Client Login</a></li>
+            </ul>
           </div>
-          <div>
-            <a href="#privacy" className="mx-2 hover:underline">Privacy Policy</a>
-            <a href="#terms" className="mx-2 hover:underline">Terms of Service</a>
-            <a href="#odpc" className="mx-2 hover:underline">ODPC Compliance</a>
+          <div className="flex flex-col items-center md:items-start">
+            <h3 className="text-xl font-heading font-semibold mb-4 text-white-custom">Legal & Support</h3>
+            <ul className="space-y-2 text-neutral-300 text-base">
+              <li><a href="https://your-website.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-accent-300 transition-colors">Privacy Policy</a></li> {/* Updated Link */}
+              <li><a href="https://your-website.com/terms-of-service" target="_blank" rel="noopener noreferrer" className="hover:text-accent-300 transition-colors">Terms of Service</a></li> {/* Updated Link */}
+              <li><a href="https://your-website.com/support" target="_blank" rel="noopener noreferrer" className="hover:text-accent-300 transition-colors">Support Center</a></li> {/* Updated Link */}
+              <li><a href="https://your-website.com/faqs" target="_blank" rel="noopener noreferrer" className="hover:text-accent-300 transition-colors">FAQs</a></li> {/* Updated Link */}
+            </ul>
+            <div className="social-links flex gap-5 mt-6 text-2xl">
+              <a href="#" className="hover:text-accent-300 transition-colors" aria-label="LinkedIn"><i className="fab fa-linkedin"></i></a>
+              <a href="#" className="hover:text-accent-300 transition-colors" aria-label="Twitter"><i className="fab fa-twitter"></i></a>
+              <a href="#" className="hover:text-accent-300 transition-colors" aria-label="Facebook"><i className="fab fa-facebook"></i></a>
+            </div>
           </div>
-          <p className="mt-4">&copy; 2025 Huashang HAIS Ltd. All Rights Reserved.</p>
+        </div>
+        <div className="container border-t border-neutral-700 mt-8 pt-8 text-center">
+          <p className="text-sm opacity-80">&copy; {new Date().getFullYear()} Huashang HAIS Ltd. All Rights Reserved.</p>
         </div>
       </motion.footer>
     </div>
